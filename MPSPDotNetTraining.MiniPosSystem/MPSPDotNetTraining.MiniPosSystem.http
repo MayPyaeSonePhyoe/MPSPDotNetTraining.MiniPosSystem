@@ -1,0 +1,6 @@
+@MPSPDotNetTraining.MiniPosSystem_HostAddress = http://localhost:5007
+
+GET {{MPSPDotNetTraining.MiniPosSystem_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
