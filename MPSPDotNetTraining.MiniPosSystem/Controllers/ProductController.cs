@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MPSPDotNetTraining.MiniPosSystem.Data;
+using MPSPDotNetTraining.MiniPosSystem.Models.Entities;
 using MPSPDotNetTraining.MiniPosSystem.Models.Requests;
-using MPSPDotNetTraining.MiniPosSystem.Services;
+using MPSPDotNetTraining.MiniPosSystem.Models.Responses;
 
 namespace MPSPDotNetTraining.MiniPosSystem.Controllers
 {
@@ -8,114 +11,147 @@ namespace MPSPDotNetTraining.MiniPosSystem.Controllers
     [Route("api/[controller]")]
     public class ProductController : ControllerBase
     {
-        private readonly ProductService _productService;
+        private readonly AppDbContext _context;
 
-        public ProductController(ProductService productService)
+        public ProductController(AppDbContext context)
         {
-            _productService = productService;
+            _context = context;
         }
 
+        // =========================
         // GET ALL
+        // =========================
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public IActionResult GetAll()
         {
-            var products = await _productService.GetAllAsync();
+            var products = _context.Products
+                .AsNoTracking()
+                .Select(p => new ProductResponse
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Price = p.Price,
+                    StockQty = p.StockQty,
+                    CategoryId = p.CategoryId
+                })
+                .ToList();
 
-            if (products == null)
-                return Ok(new List<object>());
+            return Ok(products);
+        }
 
-            // FIX: Map items on the fly to inject a sequential 'sn' starting at 1
-            var response = products.Select((p, index) => new
+        // =========================
+        // GET BY ID
+        // =========================
+        [HttpGet("{id}")]
+        public IActionResult GetById(int id)
+        {
+            var product = _context.Products
+                .AsNoTracking()
+                .Where(p => p.Id == id)
+                .Select(p => new ProductResponse
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Price = p.Price,
+                    StockQty = p.StockQty,
+                    CategoryId = p.CategoryId
+                })
+                .FirstOrDefault();
+
+            if (product == null)
+                return NotFound("Product not found");
+
+            return Ok(product);
+        }
+
+        // =========================
+        // CREATE
+        // =========================
+        [HttpPost]
+        public IActionResult Create([FromBody] ProductRequest request)
+        {
+            if (request == null)
+                return BadRequest("Invalid request");
+
+            var categoryExists = _context.Categories
+                .Any(c => c.Id == request.CategoryId);
+
+            if (!categoryExists)
+                return BadRequest("Invalid CategoryId");
+
+            var product = new Product
             {
-                sn = index + 1,       // UI uses this for clean 1, 2, 3... numbering
-                id = p.Id,            // Backend still exposes the real ID (2, 4...) for operations
-                name = p.Name,
-                price = p.Price,
-                stockQty = p.StockQty,
-                categoryId = p.CategoryId
-            }).ToList();
+                Name = request.Name,
+                Price = request.Price,
+                StockQty = request.StockQty,
+                CategoryId = request.CategoryId
+            };
+
+            _context.Products.Add(product);
+            _context.SaveChanges();
+
+            var response = new ProductResponse
+            {
+                Id = product.Id,
+                Name = product.Name,
+                Price = product.Price,
+                StockQty = product.StockQty,
+                CategoryId = product.CategoryId
+            };
 
             return Ok(response);
         }
 
-        // GET BY ID
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetById(int id)
+        // =========================
+        // UPDATE
+        // =========================
+        [HttpPut("{id}")]
+        public IActionResult Update(int id, [FromBody] ProductRequest request)
         {
-            var result = await _productService.GetByIdAsync(id);
+            var product = _context.Products.FirstOrDefault(p => p.Id == id);
 
-            if (result == null)
+            if (product == null)
                 return NotFound("Product not found");
 
-            return Ok(result);
-        }
+            var categoryExists = _context.Categories.Any(c => c.Id == request.CategoryId);
 
-        // SEARCH
-        [HttpGet("search")]
-        public async Task<IActionResult> Search([FromQuery] string keyword)
-        {
-            var result = await _productService.SearchAsync(keyword);
-            return Ok(result);
-        }
-
-        // CREATE
-        [HttpPost]
-        public async Task<IActionResult> Create([FromBody] ProductRequest request)
-        {
-            var result = await _productService.CreateAsync(request);
-
-            if (result == null)
+            if (!categoryExists)
                 return BadRequest("Invalid CategoryId");
 
-            return Ok(result);
+            product.Name = request.Name;
+            product.Price = request.Price;
+            product.StockQty = request.StockQty;
+            product.CategoryId = request.CategoryId;
+
+            _context.SaveChanges();
+
+            var response = new ProductResponse
+            {
+                Id = product.Id,
+                Name = product.Name,
+                Price = product.Price,
+                StockQty = product.StockQty,
+                CategoryId = product.CategoryId
+            };
+
+            return Ok(response);
         }
 
-        // UPDATE
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, [FromBody] ProductRequest request)
-        {
-            var result = await _productService.UpdateAsync(id, request);
-
-            if (!result)
-                return NotFound("Product not found");
-
-            return Ok("Updated successfully");
-        }
-
+        // =========================
         // DELETE
+        // =========================
         [HttpDelete("{id}")]
-        public async Task<IActionResult> Delete(int id)
+        public IActionResult Delete(int id)
         {
-            var result = await _productService.DeleteAsync(id);
+            var product = _context.Products.FirstOrDefault(p => p.Id == id);
 
-            if (!result)
+            if (product == null)
                 return NotFound("Product not found");
 
-            return Ok("Deleted successfully");
-        }
+            _context.Products.Remove(product);
+            _context.SaveChanges();
 
-        // INCREASE STOCK
-        [HttpPost("{id}/increase-stock")]
-        public async Task<IActionResult> IncreaseStock(int id, [FromQuery] int qty)
-        {
-            var result = await _productService.IncreaseStockAsync(id, qty);
-
-            if (!result)
-                return NotFound("Product not found");
-
-            return Ok("Stock increased");
-        }
-
-        // DECREASE STOCK
-        [HttpPost("{id}/decrease-stock")]
-        public async Task<IActionResult> DecreaseStock(int id, [FromQuery] int qty)
-        {
-            var result = await _productService.DecreaseStockAsync(id, qty);
-
-            if (!result)
-                return BadRequest("Invalid stock or product not found");
-
-            return Ok("Stock decreased");
+            return Ok("Product deleted successfully");
         }
     }
 }
